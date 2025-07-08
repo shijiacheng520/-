@@ -1,0 +1,26 @@
+11:00:42 **** Incremental Build of configuration Debug for project test5 ****
+make -j8 all 
+arm-none-eabi-gcc "../packages/ap3216c-v2.0.0/ap3216c.c"
+../packages/ap3216c-v2.0.0/ap3216c.c: In function 'write_reg':
+../packages/ap3216c-v2.0.0/ap3216c.c:73:16: warning: passing argument 1 of 'rt_kprintf' makes pointer from integer without a cast [-Wint-conversion]
+     rt_kprintf(rt_i2c_transfer(bus, &msgs, 1) );
+                ^
+In file included from ../packages/ap3216c-v2.0.0/ap3216c.c:11:0:
+D:\RT-ThreadStudio\workspace\test5\rt-thread\include/rtthread.h:540:6: note: expected 'const char *' but argument is of type 'rt_size_t {aka long unsigned int}'
+ void rt_kprintf(const char *fmt, ...);
+      ^
+../packages/ap3216c-v2.0.0/ap3216c.c:83:1: warning: no return statement in function returning non-void [-Wreturn-type]
+ }
+ ^
+linking...
+arm-none-eabi-objcopy -O binary "rtthread.elf"  "rtthread.bin"
+arm-none-eabi-size --format=berkeley "rtthread.elf"
+   text	   data	    bss	    dec	    hex	filename
+  92944	   1824	   3596	  98364	  1803c	rtthread.elf
+
+              Used Size(B)           Used Size(KB)
+Flash:          94768 B               92.55 KB
+RAM:             5420 B                5.29 KB
+
+11:00:44 Build Finished. 0 errors, 2 warnings. (took 1s.988ms)
+

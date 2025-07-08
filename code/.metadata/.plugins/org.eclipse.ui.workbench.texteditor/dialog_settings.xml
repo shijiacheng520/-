@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<section name="Workbench">
+	<section name="org.eclipse.ui.texteditor.FindReplaceDialog">
+		<item value="false" key="isRegEx"/>
+		<item value="PKG_USING_BC28_MQTT_PRODUCT_KEY" key="selection"/>
+		<item value="false" key="casesensitive"/>
+		<item value="false" key="wholeword"/>
+		<list key="findhistory">
+			<item value="PKG_USING_BC28_MQTT_PRODUCT_KEYIoT Core"/>
+			<item value="PKG_USING_BC28_MQTT_PRODUCT_KEY"/>
+			<item value="bc28_thread"/>
+			<item value="BSP_USING_UART2"/>
+		</list>
+		<list key="replacehistory">
+		</list>
+	</section>
+</section>

@@ -1,0 +1,147 @@
+/*
+ * Copyright (c) 2006-2018, RT-Thread Development Team
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Change Logs:
+ * Date           Author       Notes
+ * 2018-11-06     BalanceTWK   first version
+ */
+
+
+#include <rtthread.h>
+#include <rtdevice.h>
+ #include <board.h>
+
+
+#define DBG_TAG "main"
+#define DBG_LVL DBG_LOG
+#include <rtdbg.h>
+
+
+
+//0x3c = 0011 1100 >> 1 --> 0001 1110
+#define AP3216_ADD      0x1E
+
+#ifndef AP3216_I2CBUS_NAME
+#define AP3216_I2CBUS_NAME          "i2c2"  /* 连接的I2C总线设备名称 */
+#endif
+
+static struct rt_i2c_bus_device *ap3216_i2c_bus=RT_NULL;
+
+
+static rt_err_t ap_write(rt_uint8_t addr, rt_uint8_t cmd)
+{
+    rt_uint8_t buf[2];
+    struct rt_i2c_msg msgs;
+
+    buf[0]      = addr;
+    buf[1]      = cmd;
+    msgs.addr   = AP3216_ADD;
+    msgs.flags  = RT_I2C_WR;
+    msgs.buf    = buf;
+    msgs.len    = 2;
+
+    if(rt_i2c_transfer(ap3216_i2c_bus, &msgs, 1) != 1)
+    {
+        rt_kprintf("error when send %d %d", addr, cmd);
+        return -RT_ERROR;
+    }else{
+        return RT_EOK;
+    }
+
+}
+
+static rt_err_t ap_read(rt_uint8_t addr, rt_uint8_t *rtnum)
+{
+    struct rt_i2c_msg msgs[2];
+    msgs[0].addr    = msgs[1].addr \
+                    = AP3216_ADD;
+    msgs[0].flags   = RT_I2C_WR;
+    msgs[0].buf     = &addr;
+    msgs[0].len     = 1;
+
+    msgs[1].flags   = RT_I2C_RD;
+    msgs[1].buf     = rtnum;
+    msgs[1].len     = 1;
+
+    if(rt_i2c_transfer(ap3216_i2c_bus, msgs, 2) != 2)
+    {
+        rt_kprintf("read failed regesiter %d", addr);
+        return -RT_ERROR;
+    }else{
+        return RT_EOK;
+    }
+}
+
+static rt_err_t ap3216_init(void)
+{
+    rt_uint8_t tmp;
+    if(ap_write(0x00, 0x03) != RT_EOK)
+    {
+        rt_kprintf("init first failed\n");
+        return -RT_ERROR;
+    }else
+    {
+        rt_thread_mdelay(50);
+        ap_read(0x00, &tmp);
+    }
+
+    if(tmp == 0x03)
+        return RT_EOK;
+    else{
+        rt_kprintf("init second failed\n");
+        return -RT_ERROR;
+    }
+}
+
+
+static void i2c_ap3216_app(int argc, char *argv[])
+{
+    char name[RT_NAME_MAX];
+    rt_uint8_t cnt;
+    rt_uint8_t buf[6];
+    rt_uint16_t ir, als, ps;
+
+    if (argc == 2)
+    {
+        rt_strncpy(name, argv[1], RT_NAME_MAX);
+    }
+    else
+    {
+        rt_strncpy(name, AP3216_I2CBUS_NAME, RT_NAME_MAX);
+    }
+
+
+    /* 查找I2C总线设备，获取I2C总线设备句柄 */
+    ap3216_i2c_bus = (struct rt_i2c_bus_device *)rt_device_find(name);
+
+    if(ap3216_i2c_bus == RT_NULL)
+    {
+        rt_kprintf("can't find %s device!\n", name);
+    }else{
+        rt_kprintf("find i2c2\n");
+    }
+    ap3216_init();
+
+    while(1){
+        for(cnt = 0; cnt < 6; cnt++){
+            ap_read(0x0A+cnt, buf+cnt);
+        }
+
+        if(buf[0]&0X80)ir=0;                        //IR_OF位为1,则数据无效
+        else ir=((rt_uint16_t)buf[1]<<2)|(buf[0]&0X03);     //读取IR传感器的数据
+        als=((rt_uint16_t)buf[3]<<8)|buf[2];                //读取ALS传感器的数据
+        if(buf[4]&0x40)ps=0;                        //IR_OF位为1,则数据无效
+        else ps=((rt_uint16_t)(buf[5]&0X3F)<<4)|(buf[4]&0X0F); //读取PS传感器的数据
+        rt_kprintf("%d\t",ir);
+        rt_kprintf("%d\t",als);
+        rt_kprintf("%d\t\n",ps);
+        rt_thread_mdelay(500);
+    }
+}
+
+
+
+/* 导出到 msh 命令列表中 */
+MSH_CMD_EXPORT(i2c_ap3216_app, i2c ap3216 app);

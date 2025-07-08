@@ -1,0 +1,754 @@
+#include <rtthread.h>
+#include <board.h>
+#include <my-application.h>
+#include <drv_soft_i2c.h>
+#include <sgp30.h>
+#include <rs485.h>
+#include <control_device.h>
+#include <rtumodbus.h>
+#include <bc28_mqtt.h>
+#include <cJSON.h>
+#define DBG_TAG "rtu_master"
+#define DBG_LVL DBG_INFO
+#include <rtdbg.h>
+#define SGP30_I2C_BUS_NAME       "i2c2"
+#define SGP30_I2C_ADDRESS        0x58
+//uint8_t rec_length_data = 0;//接收数据长度
+uint8_t rs485buf[40];//接收数据存储数组
+extern uint16_t als11;
+
+uint16_t tem,hum;//环境温湿度
+uint16_t soilhumi;//土壤温湿度
+uint16_t ph;//土壤PH值
+uint16_t n,p,k;//氮磷钾
+uint16_t co2;//二氧化碳浓度
+
+extern uint16_t n_data;
+extern uint16_t p_data;
+extern uint16_t k_data;
+extern uint16_t ph_data;  //定义PH值
+extern int sht3x_temp;
+extern int sht3x_humi;
+extern uint16_t humi;
+int count=0,count_temp=1;
+char recv_data=0;
+char publish_data[512]={0};
+/* 配置 KEY 输入引脚  */
+#define PIN_KEY0        GET_PIN(H, 3)                   // PH3:  KEY0          --> Mode+1
+#define PIN_KEY1        GET_PIN(H, 2)                   // PH2:  KEY1          --> 启动
+#define PIN_KEY2        GET_PIN(C, 13)                  // PC13: KEY2          --> 暂停
+#define PIN_WK_UP       GET_PIN(A, 0)                   // PA0:  WK_UP
+
+/* 配置  输出引脚  */
+//下面依次是浇水水泵,杀虫剂水泵,肥料水泵
+#define PIN_Pump_Water              GET_PIN(I, 7)      // PG14: 浇水水泵(高电平有效)**
+#define PIN_Pump_Pesticide          GET_PIN(D, 13)       // PC1:  杀虫剂水泵(高电平有效)
+#define PIN_Pump_Fertilizer         GET_PIN(E, 0)       // PC4:  肥料水泵(高电平有效)**
+//下面依次是左电磁阀和右电磁阀
+#define PIN_Valve_Left              GET_PIN(H, 13)      // PH13: 左电磁阀(高电平有效)
+#define PIN_Valve_Right             GET_PIN(H, 15)      // PH15: 右电磁阀(高电平有效)
+//下面依次是左补光灯和右补光灯
+#define PIN_Light_Left              GET_PIN(I, 1)       // PI1:  左补光灯(低电平有效)
+#define PIN_Light_Right             GET_PIN(G, 11)      // PG11: 右补光灯(低电平有效)为了加5v
+//下面依次是通风扇
+#define PIN_Fan                     GET_PIN(I, 5)       // PI5:  通风扇(高电平有效)
+//下面依次是遮光棚步进电机的方向,脉冲
+#define PIN_DIR                     GET_PIN(A, 4)       // PA4:  步进电机的方向(低电平有效)
+#define PIN_PUL                     GET_PIN(E, 3)       // PE3:  步进电机的脉冲(3.3v脉冲)
+//下面依次是板子上左LED(红)和右LED(绿)
+#define PIN_LED1                    GET_PIN(B, 1)       // PB1:  板子上左LED(红)(低电平有效)
+#define PIN_LED0                    GET_PIN(B, 0)       // PB0:  板子上右LED(绿)(低电平有效)
+//下面是模式提示的输出端(每个模式对应一个端口输出高电平作为提示)
+#define PIN_Mode0                   GET_PIN(D, 4)       // PD4:  模式0提示端(高电平有效)
+#define PIN_Mode1                   GET_PIN(H, 12)      // PH12: 模式1提示端(高电平有效)
+#define PIN_Mode2                   GET_PIN(D, 5)       // PD5:  模式2提示端(高电平有效)
+#define PIN_Mode3                   GET_PIN(A, 8)       // PA8:  模式3提示端(高电平有效)
+#define PIN_Mode4                   GET_PIN(C, 8)       // PC8:  模式4提示端(高电平有效)
+#define PIN_Mode5                   GET_PIN(C, 6)       // PC6:  模式5提示端(高电平有效)
+#define PIN_Mode6                   GET_PIN(B, 14)      // PB14: 模式6提示端(高电平有效)
+#define PIN_Mode7                   GET_PIN(H, 8)       // PH8:  模式7提示端(高电平有效)
+#define PIN_Mode8                   GET_PIN(C, 11)      // PC11: 模式8提示端(高电平有效)
+#define PIN_Mode9                   GET_PIN(D, 2)       // PD2:  模式9提示端(高电平有效)
+#define PIN_Mode10                  GET_PIN(D, 7)       // PD7:  模式10提示端(高电平有效)
+#define PIN_Mode11                  GET_PIN(A, 14)      // PA14: 模式11提示端(高电平有效)
+
+
+/*配置函数*/
+//初始化
+void Key_Init(void);//按键初始化
+void Pump_Init(void);//水泵初始化
+void Valve_Init(void);//电磁阀初始化
+void Light_Init(void);//补光灯初始化
+void Fan_Init(void);//通风扇初始化
+void Motor_Init(void);//电机初始化
+void Mode_Init(void);//模式提示初始化
+void Led_Init(void);//板子上的led灯初始化
+void panduan(void);//判断函数
+
+//步进电机驱动
+void Motor_Run(uint32_t dir, uint32_t num, uint32_t speed);
+
+//按键中断
+void key0_isr(void *args);
+void key2_isr(void *args);
+
+
+/*定义全局变量*/
+int Mode = 0;//模式选择
+int key0_enabled = 1;//按键key0按下是否有效(1代表按下有效,0代表按下无效)
+int motor_enabled = 0;//步进电机是否有效(1代表步进电机有效,0代表步进电机无效)
+int motor_flag = 0;//遮阳棚的状态(0表示收起,1表示打开)
+int flag1 = 1;
+int flag2 = 1;
+int Motor_working_flag=0;//遮阳棚工作状态 0 完毕 1 运行
+int Motor_count=0; //遮阳棚计数
+int Motor_dir = -1;
+ char motorpinstat=1;
+ //肥力检测
+ int NS_flag = 0;
+ //虫害监测
+ int Pest_working_flag=2;
+ int Pest_count=0;
+ int Pesticide_flag =0; //杀虫剂水泵状态标志位
+ //
+ int th_value = 25; //温度阈值默认25度
+//状态
+char waterStatus=0;//补水0
+char NitriStatus=0;//肥料0
+char KBStatus=0;//kill bug
+char fanStatus=0;//风扇0
+char ledStatus=0;//补光0
+char shadeStatus=0;//遮阳
+char shadeStatus_F=0;//遮阳
+//虫害数据
+volatile char Pest_value = 0;
+/*
+
+按键说明:
+KEY0:Mode+1,KEY1:启动,KEY2:暂停
+
+模式说明:
+Mode->
+0:手动模式
+1:浇水(左)     -->控制左电磁阀和浇水水泵
+2:浇水(右)     -->控制右电磁阀和浇水水泵
+3:施肥(左)     -->控制左电磁阀和施肥水泵
+4:施肥(右)     -->控制右电磁阀和施肥水泵
+5:杀虫(左)     -->控制左电磁阀和杀虫剂水泵
+6:杀虫(右)     -->控制右电磁阀和杀虫剂水泵
+7:补光(左)     -->控制左补光灯
+8:补光(右)     -->控制右补光灯
+9:通风                     -->控制通风风扇
+10:遮光棚开           -->控制遮光棚打开
+11:遮光棚关           -->控制遮光棚关闭
+
+注意:
+1.遮光棚在打开或关闭时,先检测遮光棚有没有到达指定位置(架子上有铅笔划线的位置,让遮光棚的前端对齐划线处)
+2.请勿用手拽遮光棚,可能会坏步进电机
+3.所有设备不要长时间通电,不要长时间处在运行状态(测试完毕及时断电)
+4.切换模式的时候,要先按关闭键才能调下个模式(即按下key0前,先按一下key2,mode才能+1)
+
+*/
+#define SAMPLE_UART_NAME       "uart3"
+/* 用于接收消息的信号量 */
+static struct rt_semaphore rx_sem;
+static rt_device_t serial;
+//unsigned char recv_data;
+/* 接收数据回调函数 */
+static rt_err_t uart_input(rt_device_t dev, rt_size_t size)
+{
+
+    rt_device_read(serial, -1, &recv_data, 1);
+    /* 串口接收到数据后产生中断，调用此回调函数，然后发送接收信号量 */
+    //rt_sem_release(&rx_sem);
+    //rt_device_write(serial, 0, &recv_data, 1);
+    rt_kprintf("recv_data:%x\n",recv_data);
+    return RT_EOK;
+}
+
+//
+// 定义软件定时器控制块
+static rt_timer_t tmr1 = RT_NULL;
+static rt_timer_t tmr2 = RT_NULL;
+
+// 可能用到的全局变量
+static rt_uint32_t TmrCb_Cnt1 = 0;
+static rt_uint32_t TmrCb_Cnt2 = 0;
+
+
+
+/******************************************************************************
+* @ 函数名  ： timer1_callback
+* @ 功  能  ： 定时器1回调函数
+* @ 参  数  ： parameter 外部传入的参数
+* @ 返回值  ： 无
+******************************************************************************/
+static void timer1_callback(void *parameter)
+{
+    if(Motor_working_flag==1){
+
+            if (Motor_dir == 1)
+            {
+                rt_pin_write(PIN_DIR, PIN_HIGH);
+            }
+            else if (Motor_dir == 0)
+            {
+                rt_pin_write(PIN_DIR, PIN_LOW);
+            }
+
+              rt_pin_write(PIN_PUL, !rt_pin_read(PIN_PUL)); // 脉冲引脚取反
+                Motor_count++;
+                if(Motor_count>11*3200){
+                    Motor_count=0;
+                    Motor_working_flag=0;
+                    shadeStatus_F= !shadeStatus_F;
+
+                }
+
+    }
+    //虫害监测计时
+    if(Pest_working_flag==1){
+        Pest_count++;
+        if(Pest_count>3000){
+            //rt_pin_write(PIN_Pump_Pesticide, PIN_LOW);
+            Pest_count=0;
+            Pest_working_flag=0;
+        }
+    }
+   // rt_kprintf("timer2_callback 函数被执行%d次\n", TmrCb_Cnt1);
+
+}
+
+/******************************************************************************
+* @ 函数名  ： timer2_callback
+* @ 功  能  ： 定时器2回调函数
+* @ 参  数  ： parameter 外部传入的参数
+* @ 返回值  ： 无
+******************************************************************************/
+static void timer2_callback(void *parameter)
+{
+        rt_uint32_t tick_num2 = 0;
+
+    TmrCb_Cnt2++;
+
+    tick_num2 = (rt_uint32_t)rt_tick_get();   // 获取滴答定时器的计数值
+
+    rt_kprintf("timer2_callback 函数被执行%d次\n", TmrCb_Cnt2);
+    rt_kprintf("滴答定时器的数值=%d\n", tick_num2);
+}
+
+/**
+ * 串口接受线程
+ * @param parameter
+ */
+static void serial_thread_entry(void *parameter)
+{
+    char ch;
+    rt_kprintf("serial_thread_entry.\n");
+    //while (1)
+    {
+        /* 从串口读取一个字节的数据，没有读取到则等待接收信号量 */
+        while (rt_device_read(serial, -1, &ch, 1) != 1)
+        {
+            /* 阻塞等待接收信号量，等到信号量后再次读取数据 */
+            rt_sem_take(&rx_sem, RT_WAITING_FOREVER);
+        }
+        /* 读取到的数据通过串口错位输出 */
+        ch = ch + 1;
+        rt_device_write(serial, 0, &ch, 1);
+    }
+}
+
+static int uart_sample(void)
+{
+    rt_err_t ret = RT_EOK;
+    char uart_name[RT_NAME_MAX];
+    char str[] = "hello RT-Thread!\r\n";
+
+
+    rt_strncpy(uart_name, SAMPLE_UART_NAME, RT_NAME_MAX);
+    /* 查找系统中的串口设备 */
+    serial = rt_device_find(uart_name);
+    if (!serial)
+    {
+        rt_kprintf("find uart3 failed!\n");
+        return RT_ERROR;
+    }
+
+    /* 初始化信号量 */
+    rt_sem_init(&rx_sem, "rx_sem", 0, RT_IPC_FLAG_FIFO);
+    /* 以中断接收及轮询发送模式打开串口设备 */
+    rt_device_open(serial, RT_DEVICE_FLAG_INT_RX);
+    /* 设置接收回调函数 */
+    rt_device_set_rx_indicate(serial, uart_input);
+    /* 发送字符串 */
+    //rt_device_write(serial, 0, str, (sizeof(str) - 1));
+
+    /* 创建 serial 线程 */
+    rt_thread_t thread = rt_thread_create("serial", serial_thread_entry, RT_NULL, 1024, 25, 10);
+    /* 创建成功则启动线程 */
+    if (thread != RT_NULL)
+    {
+        rt_thread_startup(thread);
+    }
+    else
+    {
+        ret = RT_ERROR;
+    }
+
+    return ret;
+}
+void mqtt_recv_cb(const char *json)
+{
+    cJSON *obj = cJSON_Parse(json);
+
+    cJSON *powerstate = cJSON_GetObjectItem(cJSON_GetObjectItem(obj, "params"), "powerstate");
+
+    if (powerstate->valueint == 1)
+    {
+        //light_on();
+        rt_kprintf("switch on");
+    }
+    else if (powerstate->valueint == 0)
+    {
+        //light_off();
+        rt_kprintf("switch off");
+    }
+}
+
+rt_tick_t tick = 0;
+rt_tick_t tickold = 0;
+rt_tick_t tickold1 = 0;
+unsigned char alldatasend[24]={0};
+int main(void)
+{
+
+    char str[] = "hello RT-Thread!\r\n";
+    //mailbox_sample();//邮箱初始化
+    uart_sample();
+
+    rt_hw_i2c_init();//i2c初始化
+    ap_thread_init();//光照强度线程初始化
+    sht3x_thread_init();
+    rs485_sample_master_init();//土壤肥沃度线程初始化
+    sgp30_device_t sgp30 = sgp30_create(SGP30_I2C_BUS_NAME);
+    if(!sgp30)
+    {
+       rt_kprintf("(SGP30) Init failed\n");
+       return;
+    }
+
+    /*设备初始化*/
+    Key_Init();
+    Pump_Init();
+    Valve_Init();
+    Light_Init();
+    Fan_Init();
+    Motor_Init();
+    Mode_Init();
+    Led_Init();
+//--------------------------------------------------------------------------
+
+
+// 创建一个软件定时器
+    tmr1 =  rt_timer_create("tmr1",                 // 软件定时器名称
+                        timer1_callback,            // 软件定时器超时函数
+                        RT_NULL,                    // 超时函数参数
+                        1,                       // 超时时间
+                        RT_TIMER_FLAG_PERIODIC |
+                        RT_TIMER_FLAG_SOFT_TIMER);  // 软件定时器模式，一次模式
+
+
+    // 启动定时器
+    if(tmr1 != RT_NULL)
+        rt_timer_start(tmr1);
+
+//--------------------------------------------------------------------------
+    /* init bc28 model */
+        while(bc28_init() < 0)
+        {
+            rt_kprintf("(BC28) init failed\n");
+        }
+        /* build mqtt network */
+           while (bc28_build_mqtt_network() < 0)
+           {
+               //bc28_mqtt_close();
+               rt_kprintf("(BC28) rebuild mqtt network\n");
+           }
+           rt_kprintf("(BC28) MQTT connect ok\n");
+
+           /* bind parser callback function */
+           bc28_bind_parser(mqtt_recv_cb);
+           /* subscribe a topic */
+               char topic[256];
+               rt_sprintf(topic, "/sys/%s/%s/thing/event/property/post",
+                          PKG_USING_BC28_MQTT_PRODUCT_KEY,
+                          PKG_USING_BC28_MQTT_DEVICE_NAME);
+    while(1)
+    {
+        if(Mode >= 11) Mode = 0;//模式超过11后从0开始
+        if(rt_pin_read(PIN_KEY1) == PIN_LOW){
+            th_value++;
+        }
+        if(rt_pin_read(PIN_KEY2) == PIN_LOW){
+            th_value--;
+        }
+        if(rt_pin_read(PIN_KEY0) == PIN_LOW){
+            th_value=25;
+        }
+//        if (rt_pin_read(PIN_KEY1) == PIN_LOW)//当key1按键按下时执行对应控制
+//       {
+//           switch (Mode)
+//               {
+//                   case 0:rt_pin_write(PIN_Mode0, PIN_HIGH);break;//打开模式0提示端口
+//                   case 1:rt_pin_write(PIN_Pump_Water, PIN_HIGH);rt_pin_write(PIN_Valve_Left, PIN_HIGH);rt_pin_write(PIN_Mode1, PIN_HIGH);break;//打开浇水水泵,打开左电磁阀,打开模式1提示端口
+//                   case 2:rt_pin_write(PIN_Pump_Water, PIN_HIGH);rt_pin_write(PIN_Valve_Right, PIN_HIGH);rt_pin_write(PIN_Mode2, PIN_HIGH);break;//打开浇水水泵,打开右电磁阀,打开模式2提示端口
+//                   case 3:rt_pin_write(PIN_Pump_Pesticide, PIN_HIGH);rt_pin_write(PIN_Valve_Left, PIN_HIGH);rt_pin_write(PIN_Mode3, PIN_HIGH);break;//打开杀虫剂水泵,打开左电磁阀,打开模式3提示端口
+//                   case 4:rt_pin_write(PIN_Pump_Pesticide, PIN_HIGH);rt_pin_write(PIN_Valve_Right, PIN_HIGH);rt_pin_write(PIN_Mode4, PIN_HIGH);break;//打开杀虫剂水泵,打开右电磁阀,打开模式4提示端口
+//                   case 5:rt_pin_write(PIN_Pump_Fertilizer, PIN_HIGH);rt_pin_write(PIN_Valve_Left, PIN_HIGH);rt_pin_write(PIN_Mode5, PIN_HIGH);break;//打开施肥水泵,打开左电磁阀,打开模式5提示端口
+//                   case 6:rt_pin_write(PIN_Pump_Fertilizer, PIN_HIGH);rt_pin_write(PIN_Valve_Right, PIN_HIGH);rt_pin_write(PIN_Mode6, PIN_HIGH);break;//打开施肥水泵,打开右电磁阀,打开模式6提示端口
+//                   case 7:rt_pin_write(PIN_Light_Left, PIN_LOW);rt_pin_write(PIN_Mode7, PIN_HIGH);break;//打开左补光灯,打开模式7提示端口
+//                   case 8:rt_pin_write(PIN_Light_Right, PIN_LOW);rt_pin_write(PIN_Mode8, PIN_HIGH);break;//打开右补光灯,打开模式8提示端口
+//                   case 9:rt_pin_write(PIN_Fan, PIN_HIGH);rt_pin_write(PIN_Mode9, PIN_HIGH);break;//打开通风扇,打开模式9提示端口
+//                   case 10:rt_pin_write(PIN_Mode10, PIN_HIGH);start_Motor_thread();break;//展开遮光棚,打开模式10提示端口
+//                   //case 10:rt_pin_write(PIN_Mode10, PIN_HIGH);motor_enabled = 1;Motor_Run(1, 11, 10);break;//展开遮光棚,打开模式10提示端口
+//              }
+//       }
+
+        //    rt_kprintf("als:%d\r\n",als11);
+
+       if(!sgp30_measure(sgp30))
+       {
+           rt_kprintf("(SGP30) Measurement failed\n");
+           sgp30_delete(sgp30);
+           break;
+       }
+       co2=sgp30->eCO2;
+       //if(Mode == 0)
+           panduan();
+
+
+      tick = rt_tick_get();
+      if((int)(tick-tickold)>500)
+      {
+
+          alldatasend[0]=((n_data*10)>>8)&0xff;
+          alldatasend[1]= (n_data*10)&0xff;
+          alldatasend[2]=((p_data*10)>>8)&0xff;
+          alldatasend[3]= (p_data*10)&0xff;
+          alldatasend[4]=((k_data*10)>>8)&0xff;
+          alldatasend[5]= (k_data*10)&0xff;
+          alldatasend[6]=((ph_data*10)>>8)&0xff;
+          alldatasend[7]= (ph_data*10)&0xff;
+          alldatasend[8]=((humi*10)>>8)&0xff;
+          alldatasend[9]=(humi*10)&0xff;       //土壤湿度
+          alldatasend[10]=((co2*10)>>8)&0xff;//co2
+          alldatasend[11]=(co2*10)&0xff;
+          alldatasend[12]=((sht3x_temp*10)>>8)&0xff;//co2sht3x_temp
+          alldatasend[13]=(sht3x_temp*10)&0xff;
+          alldatasend[14]=((sht3x_humi*10)>>8)&0xff;//co2sht3x_temp
+          alldatasend[15]=(sht3x_humi*10)&0xff;
+          alldatasend[16]=waterStatus;//co2
+          alldatasend[17]=NitriStatus;
+          alldatasend[18]=KBStatus;//co2sht3x_temp
+          alldatasend[19]=fanStatus;
+          alldatasend[20]=ledStatus;//co2sht3x_temp
+          alldatasend[21]=shadeStatus;
+          alldatasend[22]=((als11)>>8)&0xff;
+          alldatasend[23]=(als11)&0xff;
+          //char waterStatus=2;//补水
+//                                   char NitriStatus=2;//肥料
+//                                   char KBStatus=2;//kill bug
+//                                   char fanStatus=2;//风扇
+//                                   char ledStatus=2;//补光
+//                                   char shadeStatus=2;//遮阳
+
+
+          tickold = rt_tick_get();
+          //rt_kprintf("tickold:%u\n",tickold);
+          //rt_kprintf("tick:%u\n",rt_tick_get());
+          rt_device_write(serial, 0, alldatasend, 24);
+      }
+
+      if((int)(tick-tickold1)>500)
+      {
+          rt_sprintf(publish_data,
+                         "{params:{illumination:%d,LED:%d,sunshade:%d,soil_humi:%d,sht3x_temp:%d,fan:%d,sht3x_humi:%d,sgp30_co2:%d}}",
+                         als11,(int)ledStatus,(int)shadeStatus,humi,sht3x_temp,(int)fanStatus,sht3x_humi,co2);
+                 bc28_mqtt_publish(topic, publish_data);
+                 publish_data[512]=0;
+                 //rt_thread_mdelay(100);
+                 rt_sprintf(publish_data,
+                         "{params:{irrigate:%d,soil_n:%d,soil_p:%d,soil_k:%d,soil_ph:%d,fertilizer:%d,pest:%d,pesticide:%d}}",
+                         (int)waterStatus,n_data,p_data,k_data,ph_data,(int)NitriStatus,(int)Pesticide_flag,(int)Pesticide_flag);
+                 bc28_mqtt_publish(topic, publish_data);
+                 LOG_D("Publish1111111111111111111111111111111111111111 ");
+                 publish_data[512]=0;
+
+          tickold1 = rt_tick_get();
+      }
+
+}
+
+
+    return RT_EOK;
+}
+
+
+//
+void Key_Init(void)
+{
+    rt_pin_mode(PIN_KEY0, PIN_MODE_INPUT_PULLUP);
+    rt_pin_mode(PIN_KEY1, PIN_MODE_INPUT_PULLUP);
+    rt_pin_mode(PIN_KEY2, PIN_MODE_INPUT_PULLUP);
+    rt_pin_mode(PIN_WK_UP, PIN_MODE_INPUT_PULLUP);
+
+    /* 设置中断模式并注册中断回调 */
+    rt_pin_attach_irq(PIN_KEY0, PIN_IRQ_MODE_FALLING, key0_isr, RT_NULL);
+    rt_pin_attach_irq(PIN_KEY2, PIN_IRQ_MODE_FALLING, key2_isr, RT_NULL);
+
+
+    /* 启用中断 */
+    rt_pin_irq_enable(PIN_KEY0, PIN_IRQ_ENABLE);
+    rt_pin_irq_enable(PIN_KEY2, PIN_IRQ_ENABLE);
+}
+
+void Pump_Init(void)
+{
+    rt_pin_mode(PIN_Pump_Water, PIN_MODE_OUTPUT);
+    rt_pin_mode(PIN_Pump_Pesticide, PIN_MODE_OUTPUT);
+    rt_pin_mode(PIN_Pump_Fertilizer, PIN_MODE_OUTPUT);
+
+    rt_pin_write(PIN_Pump_Water, PIN_LOW);
+    rt_pin_write(PIN_Pump_Pesticide, PIN_LOW);
+    rt_pin_write(PIN_Pump_Fertilizer, PIN_LOW);
+}
+
+void Valve_Init(void)
+{
+    rt_pin_mode(PIN_Valve_Left, PIN_MODE_OUTPUT);
+    rt_pin_mode(PIN_Valve_Right, PIN_MODE_OUTPUT);
+
+    rt_pin_write(PIN_Valve_Left, PIN_LOW);
+    rt_pin_write(PIN_Valve_Right, PIN_LOW);
+}
+
+void Light_Init(void)
+{
+    rt_pin_mode(PIN_Light_Left, PIN_MODE_OUTPUT);
+    rt_pin_mode(PIN_Light_Right, PIN_MODE_OUTPUT);
+
+    rt_pin_write(PIN_Light_Left, PIN_HIGH);
+    rt_pin_write(PIN_Light_Right, PIN_HIGH);
+}
+
+void Fan_Init(void)
+{
+    rt_pin_mode(PIN_Fan, PIN_MODE_OUTPUT);
+
+    rt_pin_write(PIN_Fan, PIN_LOW);
+}
+
+void Motor_Init(void)
+{
+    rt_pin_mode(PIN_DIR, PIN_MODE_OUTPUT);
+    rt_pin_mode(PIN_PUL, PIN_MODE_OUTPUT);
+
+    rt_pin_write(PIN_DIR, PIN_HIGH);
+    rt_pin_write(PIN_PUL, PIN_HIGH);
+}
+
+void Led_Init(void)
+{
+    rt_pin_mode(PIN_LED1, PIN_MODE_OUTPUT);
+    rt_pin_mode(PIN_LED0, PIN_MODE_OUTPUT);
+
+
+    rt_pin_write(PIN_LED1, PIN_HIGH);
+    rt_pin_write(PIN_LED0, PIN_HIGH);
+}
+
+void Mode_Init(void)
+{
+    rt_pin_mode(PIN_Mode0, PIN_MODE_OUTPUT);
+    rt_pin_mode(PIN_Mode1, PIN_MODE_OUTPUT);
+    rt_pin_mode(PIN_Mode2, PIN_MODE_OUTPUT);
+    rt_pin_mode(PIN_Mode3, PIN_MODE_OUTPUT);
+    rt_pin_mode(PIN_Mode4, PIN_MODE_OUTPUT);
+    rt_pin_mode(PIN_Mode5, PIN_MODE_OUTPUT);
+    rt_pin_mode(PIN_Mode6, PIN_MODE_OUTPUT);
+    rt_pin_mode(PIN_Mode7, PIN_MODE_OUTPUT);
+    rt_pin_mode(PIN_Mode8, PIN_MODE_OUTPUT);
+    rt_pin_mode(PIN_Mode9, PIN_MODE_OUTPUT);
+    rt_pin_mode(PIN_Mode10, PIN_MODE_OUTPUT);
+    rt_pin_mode(PIN_Mode11, PIN_MODE_OUTPUT);
+
+    rt_pin_write(PIN_Mode0, PIN_LOW);
+    rt_pin_write(PIN_Mode1, PIN_LOW);
+    rt_pin_write(PIN_Mode2, PIN_LOW);
+    rt_pin_write(PIN_Mode3, PIN_LOW);
+    rt_pin_write(PIN_Mode4, PIN_LOW);
+    rt_pin_write(PIN_Mode5, PIN_LOW);
+    rt_pin_write(PIN_Mode6, PIN_LOW);
+    rt_pin_write(PIN_Mode7, PIN_LOW);
+    rt_pin_write(PIN_Mode8, PIN_LOW);
+    rt_pin_write(PIN_Mode9, PIN_LOW);
+    rt_pin_write(PIN_Mode10, PIN_LOW);
+    rt_pin_write(PIN_Mode11, PIN_LOW);
+}
+
+void Motor_Run(uint32_t dir, uint32_t num, uint32_t speed)
+{
+    motor_flag = !motor_flag;
+    if (dir == 1)
+    {
+        rt_pin_write(PIN_DIR, PIN_HIGH);
+    }
+    else if (dir == 0)
+    {
+        rt_pin_write(PIN_DIR, PIN_LOW);
+    }
+
+    for (uint32_t i = 0; i <= (num * 1600); i++)
+    {
+        if (motor_enabled)
+        {
+            rt_thread_mdelay(speed/1000);
+            rt_pin_write(PIN_PUL, !rt_pin_read(PIN_PUL)); // 脉冲引脚取反
+        }
+        else
+        {
+            break;
+        }
+    }
+}
+
+/* 按键中断回调函数 */
+void key0_isr(void *args)
+{
+    if (key0_enabled)
+    {
+       // Mode++;
+        key0_enabled = 0; /* 进入中断后禁用 key0 中断 */
+    }
+}
+
+void key2_isr(void *args)//关闭所有设备
+{
+    key0_enabled = 1;
+    rt_pin_write(PIN_Pump_Water, PIN_LOW);
+    rt_pin_write(PIN_Pump_Pesticide, PIN_LOW);
+    rt_pin_write(PIN_Pump_Fertilizer, PIN_LOW);
+    rt_pin_write(PIN_Valve_Left, PIN_LOW);
+    rt_pin_write(PIN_Valve_Right, PIN_LOW);
+    rt_pin_write(PIN_Light_Left, PIN_HIGH);
+    rt_pin_write(PIN_Light_Right, PIN_HIGH);
+    rt_pin_write(PIN_Fan, PIN_LOW);
+    motor_enabled = 0;
+    rt_pin_write(PIN_LED1, PIN_HIGH);
+    rt_pin_write(PIN_LED0, PIN_HIGH);
+    rt_pin_write(PIN_Mode0, PIN_LOW);
+    rt_pin_write(PIN_Mode1, PIN_LOW);
+    rt_pin_write(PIN_Mode2, PIN_LOW);
+    rt_pin_write(PIN_Mode3, PIN_LOW);
+    rt_pin_write(PIN_Mode4, PIN_LOW);
+    rt_pin_write(PIN_Mode5, PIN_LOW);
+    rt_pin_write(PIN_Mode6, PIN_LOW);
+    rt_pin_write(PIN_Mode7, PIN_LOW);
+    rt_pin_write(PIN_Mode8, PIN_LOW);
+    rt_pin_write(PIN_Mode9, PIN_LOW);
+    rt_pin_write(PIN_Mode10, PIN_LOW);
+    rt_pin_write(PIN_Mode11, PIN_LOW);
+}
+
+void panduan(void)
+{
+
+
+    if (humi < 30 && humi > 20)//开始浇水
+    {   waterStatus=1;
+        rt_pin_write(PIN_Pump_Water, PIN_HIGH);rt_pin_write(PIN_Valve_Left, PIN_HIGH);
+    }
+
+     if (humi > 30 || (humi < 5 && humi >3))//停止浇水
+    {   waterStatus=0;
+        rt_pin_write(PIN_Pump_Water, PIN_LOW);rt_pin_write(PIN_Valve_Left, PIN_LOW);
+    }
+
+    if(n_data < 30 && n_data >9)//开始补肥料
+    {NitriStatus=1;
+        rt_pin_write(PIN_Pump_Fertilizer, PIN_HIGH);rt_pin_write(PIN_Valve_Right, PIN_HIGH);
+    }
+
+    if(n_data > 30 && (n_data <9 && n_data >5))//停止补肥料
+    {NitriStatus=0;
+        rt_pin_write(PIN_Pump_Fertilizer, PIN_LOW);rt_pin_write(PIN_Valve_Right, PIN_LOW);rt_kprintf("2222222222222222222222222\n");
+    }
+
+    if(sht3x_temp >= th_value && sht3x_temp<100)//开始通风
+    {fanStatus=1;
+        rt_pin_write(PIN_Fan, PIN_HIGH);
+    }
+
+    if(sht3x_temp < th_value )//停止通风
+    {fanStatus=0;
+        rt_pin_write(PIN_Fan, PIN_LOW);
+    }
+
+    if(als11 >= 500)//停止补光
+    {ledStatus=0;
+        rt_pin_write(PIN_Light_Left, PIN_HIGH);rt_pin_write(PIN_Light_Right, PIN_HIGH);
+    }
+
+    if(als11 < 500)//开始补光
+    {ledStatus=1;
+        rt_pin_write(PIN_Light_Left, PIN_LOW);rt_pin_write(PIN_Light_Right, PIN_LOW);
+    }
+
+    if(als11 >=5500 && shadeStatus_F==0 )//开展遮阳棚
+    {
+        Motor_working_flag=1;
+        Motor_dir=1;
+        shadeStatus=1;
+    }
+
+    if(als11 < 500 && shadeStatus_F==1)//关闭遮阳棚
+    {
+        Motor_working_flag=1;
+        Motor_dir=0;
+        shadeStatus=0;
+    }
+
+        if(recv_data==0x31){
+            recv_data = 0;
+            Pest_working_flag=1;
+            KBStatus=1;
+            rt_pin_write(PIN_Valve_Left, PIN_HIGH);
+            if(Pesticide_flag != 1){
+                Pesticide_flag ==1;
+                rt_pin_write(PIN_Pump_Pesticide, PIN_HIGH);
+            }
+
+        }
+        if(recv_data==0x32 ){
+               recv_data=0;
+            Pest_working_flag=1;
+            KBStatus=1;
+            rt_pin_write(PIN_Valve_Right, PIN_HIGH);
+            if(Pesticide_flag != 1){
+                Pesticide_flag = 1;
+                rt_pin_write(PIN_Pump_Pesticide, PIN_HIGH);
+            }
+
+        }
+        if(Pest_working_flag==0){
+            KBStatus=0;
+            Pesticide_flag=0;
+            rt_kprintf("111111111111111111111111\n");
+            rt_pin_write(PIN_Pump_Pesticide, PIN_LOW);
+            rt_pin_write(PIN_Valve_Left, PIN_LOW);
+            rt_pin_write(PIN_Valve_Right, PIN_LOW);
+        }
+}
+
+

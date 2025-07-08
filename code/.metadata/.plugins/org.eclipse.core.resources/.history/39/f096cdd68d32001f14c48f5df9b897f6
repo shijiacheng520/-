@@ -1,0 +1,27 @@
+[
+ {
+  "path": "/packages/peripherals/sensors/mpu6xxx", 
+  "ver": "v1.1.1", 
+  "name": "MPU6XXX"
+ }, 
+ {
+  "path": "/packages/peripherals/sensors/ap3216c", 
+  "ver": "v2.0.0", 
+  "name": "AP3216C"
+ }, 
+ {
+  "path": "/packages/peripherals/sensors/sht3x", 
+  "ver": "v1.0.0", 
+  "name": "SHT3X"
+ }, 
+ {
+  "path": "/packages/peripherals/at24cxx", 
+  "ver": "latest", 
+  "name": "AT24CXX"
+ }, 
+ {
+  "path": "/packages/peripherals/i2c-tools", 
+  "ver": "latest", 
+  "name": "I2C_TOOLS"
+ }
+]

@@ -1,0 +1,17 @@
+10:46:46 **** Build of configuration Debug for project project_sensor ****
+make -j8 mdk_all 
+studio-mdk-bridge.exe --build --uv4-path "D:\Keil_v5\UV4\UV4.exe" "D:\Learning\Competitions\COMPET_Projects\PROJECT01TP\USER\AP3216C.uvprojx"
+  
+Warning: *** SUPPORT EXPIRED, NEW PRODUCT SERIAL NUMBER REQUIRED ***
+         *** Running with Code Size Limit: 32K                   ***
+*** Using Compiler 'V5.05 update 1 (build 106)', folder: 'D:\Keil_v5\ARM\ARMCC\Bin'
+Build target 'AP3216C'
+"./.rtt-studio/Debug\rtthread.axf" - 0 Error(s), 1 Warning(s).
+Build Time Elapsed:  00:00:03
+==================== build successfully ====================
+generating bin file ...	[done]
+axf to elf ...
+ÃüÁî±»È¡Ïû
+
+10:48:05 Build Cancelled. (took 1m:19s.358ms)
+

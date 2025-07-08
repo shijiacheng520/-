@@ -1,0 +1,87 @@
+13:01:31 **** Incremental Build of configuration Debug for project test14 ****
+make -j8 all 
+arm-none-eabi-gcc "../rt-thread/components/net/lwip/port/ethernetif.c"
+arm-none-eabi-gcc "../rt-thread/components/net/lwip/lwip-2.0.3/src/core/dns.c"
+arm-none-eabi-gcc "../rt-thread/components/net/lwip/lwip-2.0.3/src/core/init.c"
+arm-none-eabi-gcc "../rt-thread/components/net/lwip/lwip-2.0.3/src/core/memp.c"
+arm-none-eabi-gcc "../rt-thread/components/net/lwip/lwip-2.0.3/src/core/timeouts.c"
+arm-none-eabi-gcc "../rt-thread/components/net/lwip/lwip-2.0.3/src/api/api_msg.c"
+arm-none-eabi-gcc "../rt-thread/components/net/lwip/lwip-2.0.3/src/api/netdb.c"
+arm-none-eabi-gcc "../applications/main.c"
+In file included from ../rt-thread/components/net/lwip/lwip-2.0.3/src/core/dns.c:93:0:
+../rt-thread/components/net/lwip/lwip-2.0.3/src/core/dns.c: In function 'dns_gethostbyname':
+D:\RT-ThreadStudio\workspace\test14\rt-thread\components\net\lwip\lwip-2.0.3\src\include/lwip/dns.h:56:37: error: expected ')' before numeric constant
+ #define LWIP_DNS_ADDRTYPE_IPV4      0
+                                     ^
+D:\RT-ThreadStudio\workspace\test14\rt-thread\components\net\lwip\lwip-2.0.3\src\include/lwip/dns.h:65:37: note: in expansion of macro 'LWIP_DNS_ADDRTYPE_IPV4'
+ #define LWIP_DNS_ADDRTYPE_DEFAULT   LWIP_DNS_ADDRTYPE_IPV4
+                                     ^
+../rt-thread/components/net/lwip/lwip-2.0.3/src/core/dns.c:1483:52: note: in expansion of macro 'LWIP_DNS_ADDRTYPE_DEFAULT'
+   return dns_gethostbyname_addrtype(hostname, addr LWIP_DNS_ADDRTYPE_DEFAULT);
+                                                    ^
+../rt-thread/components/net/lwip/lwip-2.0.3/src/core/dns.c:1483:10: error: too few arguments to function 'dns_gethostbyname_addrtype'
+   return dns_gethostbyname_addrtype(hostname, addr LWIP_DNS_ADDRTYPE_DEFAULT);
+          ^
+In file included from ../rt-thread/components/net/lwip/lwip-2.0.3/src/core/dns.c:93:0:
+D:\RT-ThreadStudio\workspace\test14\rt-thread\components\net\lwip\lwip-2.0.3\src\include/lwip/dns.h:110:18: note: declared here
+ err_t            dns_gethostbyname_addrtype(const char *hostname, ip_addr_t *addr,
+                  ^
+../rt-thread/components/net/lwip/lwip-2.0.3/src/core/dns.c: At top level:
+../rt-thread/components/net/lwip/lwip-2.0.3/src/core/dns.c:1501:1: error: conflicting types for 'dns_gethostbyname_addrtype'
+ dns_gethostbyname_addrtype(const char *hostname, ip_addr_t *addr,
+ ^
+In file included from ../rt-thread/components/net/lwip/lwip-2.0.3/src/core/dns.c:93:0:
+D:\RT-ThreadStudio\workspace\test14\rt-thread\components\net\lwip\lwip-2.0.3\src\include/lwip/dns.h:110:18: note: previous declaration of 'dns_gethostbyname_addrtype' was here
+ err_t            dns_gethostbyname_addrtype(const char *hostname, ip_addr_t *addr,
+                  ^
+../rt-thread/components/net/lwip/lwip-2.0.3/src/core/dns.c: In function 'dns_gethostbyname_addrtype':
+../rt-thread/components/net/lwip/lwip-2.0.3/src/core/dns.c:1582:34: error: expected statement before ')' token
+      LWIP_DNS_ISMDNS_ARG(is_mdns));
+                                  ^
+../rt-thread/components/net/lwip/lwip-2.0.3/src/core/dns.c: At top level:
+../rt-thread/components/net/lwip/lwip-2.0.3/src/core/dns.c:1331:1: warning: 'dns_enqueue' defined but not used [-Wunused-function]
+ dns_enqueue(const char *name, size_t hostnamelen, dns_found_callback found,
+ ^
+../rt-thread/components/net/lwip/lwip-2.0.3/src/core/dns.c: In function 'dns_gethostbyname':
+../rt-thread/components/net/lwip/lwip-2.0.3/src/core/dns.c:1484:1: warning: control reaches end of non-void function [-Wreturn-type]
+ }
+ ^
+../rt-thread/components/net/lwip/lwip-2.0.3/src/core/dns.c: In function 'dns_gethostbyname_addrtype':
+../rt-thread/components/net/lwip/lwip-2.0.3/src/core/dns.c:1583:1: warning: control reaches end of non-void function [-Wreturn-type]
+ }
+ ^
+make: *** [rt-thread/components/net/lwip/lwip-2.0.3/src/core/subdir.mk:63: rt-thread/components/net/lwip/lwip-2.0.3/src/core/dns.o] Error 1
+make: *** Waiting for unfinished jobs....
+In file included from ../applications/main.c:20:0:
+D:\RT-ThreadStudio\workspace\test14\rt-thread\components\net\lwip\lwip-2.0.3\src\include/lwip/dns.h:108:1: error: unknown type name 'err_t'
+ err_t            dns_gethostbyname(const char *hostname, ip_addr_t *addr
+ ^
+D:\RT-ThreadStudio\workspace\test14\rt-thread\components\net\lwip\lwip-2.0.3\src\include/lwip/dns.h:110:1: error: unknown type name 'err_t'
+ err_t            dns_gethostbyname_addrtype(const char *hostname, ip_addr_t *addr,
+ ^
+../applications/main.c: In function 'get_pest_position':
+../applications/main.c:58:13: warning: implicit declaration of function 'write' [-Wimplicit-function-declaration]
+             write(sockfd, request, strlen(request));
+             ^
+../applications/main.c:58:36: warning: implicit declaration of function 'strlen' [-Wimplicit-function-declaration]
+             write(sockfd, request, strlen(request));
+                                    ^
+../applications/main.c:58:36: warning: incompatible implicit declaration of built-in function 'strlen'
+../applications/main.c:58:36: note: include '<string.h>' or provide a declaration of 'strlen'
+../applications/main.c:63:38: warning: implicit declaration of function 'read' [-Wimplicit-function-declaration]
+             while ((bytes_received = read(sockfd, buffer, sizeof(buffer) - 1)) > 0) {
+                                      ^
+../applications/main.c:67:38: warning: implicit declaration of function 'strstr' [-Wimplicit-function-declaration]
+                 char *position_str = strstr(buffer, "position: ");
+                                      ^
+../applications/main.c:67:38: warning: incompatible implicit declaration of built-in function 'strstr'
+../applications/main.c:67:38: note: include '<string.h>' or provide a declaration of 'strstr'
+../applications/main.c: In function 'main':
+../applications/main.c:92:7: warning: implicit declaration of function 'MX_ETH_Init' [-Wimplicit-function-declaration]
+       MX_ETH_Init();
+       ^
+make: *** [applications/subdir.mk:18: applications/main.o] Error 1
+"make -j8 all" terminated with exit code 2. Build might be incomplete.
+
+13:01:34 Build Failed. 9 errors, 10 warnings. (took 2s.202ms)
+

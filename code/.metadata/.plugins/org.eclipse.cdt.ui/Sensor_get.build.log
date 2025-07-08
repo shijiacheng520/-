@@ -1,0 +1,33 @@
+16:44:38 **** Incremental Build of configuration Debug for project Sensor_get ****
+make -j8 all 
+arm-none-eabi-gcc "../rt-thread/libcpu/arm/cortex-m7/cpu_cache.c"
+arm-none-eabi-gcc "../drivers/board.c"
+arm-none-eabi-gcc "../drivers/drv_adc.c"
+arm-none-eabi-gcc "../drivers/drv_clk.c"
+arm-none-eabi-gcc "../drivers/drv_common.c"
+arm-none-eabi-gcc "../drivers/drv_eth.c"
+arm-none-eabi-gcc "../drivers/drv_flash_f7.c"
+arm-none-eabi-gcc "../drivers/drv_gpio.c"
+arm-none-eabi-gcc "../drivers/drv_hwtimer.c"
+arm-none-eabi-gcc "../drivers/drv_pwm.c"
+arm-none-eabi-gcc "../drivers/drv_qspi.c"
+arm-none-eabi-gcc "../drivers/drv_rtc.c"
+arm-none-eabi-gcc "../drivers/drv_sdio.c"
+arm-none-eabi-gcc "../drivers/drv_soft_i2c.c"
+arm-none-eabi-gcc "../drivers/drv_spi.c"
+arm-none-eabi-gcc "../drivers/drv_usart.c"
+arm-none-eabi-gcc "../drivers/drv_usbd.c"
+arm-none-eabi-gcc "../drivers/drv_usbh.c"
+arm-none-eabi-gcc "../drivers/drv_wdt.c"
+linking...
+arm-none-eabi-objcopy -O binary "rtthread.elf"  "rtthread.bin"
+arm-none-eabi-size --format=berkeley "rtthread.elf"
+   text	   data	    bss	    dec	    hex	filename
+  34252	   1408	   2472	  38132	   94f4	rtthread.elf
+
+              Used Size(B)           Used Size(KB)
+Flash:          35660 B               34.82 KB
+RAM:             3880 B                3.79 KB
+
+16:44:41 Build Finished. 0 errors, 0 warnings. (took 2s.684ms)
+

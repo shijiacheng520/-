@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="将资源“test10/applications/myiic.h”重命名为“myrs485.h”" description="重命名资源“myiic.h”" flags="7" id="org.eclipse.ltk.core.refactoring.rename.resource" input="applications/myiic.h" name="myrs485.h" stamp="1719651677366" updateReferences="true"/>
+</session>

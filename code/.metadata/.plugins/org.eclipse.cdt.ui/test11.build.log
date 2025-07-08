@@ -1,0 +1,12 @@
+17:25:58 **** Incremental Build of configuration Debug for project test11 ****
+make -j32 all 
+arm-none-eabi-size --format=berkeley "rtthread.elf"
+   text	   data	    bss	    dec	    hex	filename
+ 155812	   1992	  11376	 169180	  294dc	rtthread.elf
+
+              Used Size(B)           Used Size(KB)
+Flash:         157804 B              154.11 KB
+RAM:            13368 B               13.05 KB
+
+17:25:58 Build Finished. 0 errors, 0 warnings. (took 792ms)
+
